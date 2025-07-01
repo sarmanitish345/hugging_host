@@ -1,47 +1,42 @@
-import streamlit as st  
-import os
-import cv2
+import gradio as gr
 from ultralytics import YOLO
-import tempfile
-from PIL import Image
 from pathlib import Path
-
-
-# Page title
-st.set_page_config(page_title="Elephant Detector", layout="centered")
-st.title("🐘 Elephant Detector using YOLOv8")
-st.caption("Upload an image or video to detect elephants using your trained model.")
+import cv2
+import tempfile
+import os
 
 # Load model
-@st.cache_resource
-def load_model():
-    return YOLO("best.pt")
+model = YOLO("best.pt")
 
-model = load_model()
-
-# File uploader
-file = st.file_uploader("Upload Image or Video", type=["jpg", "jpeg", "png", "mp4"])
-
-# Handle input
-if file is not None:
-    suffix = Path(file.name).suffix
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-        temp_file.write(file.read())
-        temp_path = temp_file.name
+def detect_elephant(file_obj):
+    # Get file path and suffix
+    temp_dir = tempfile.mkdtemp()
+    file_path = os.path.join(temp_dir, file_obj.name)
+    with open(file_path, "wb") as f:
+        f.write(file_obj.read())
+    suffix = Path(file_path).suffix.lower()
 
     if suffix in [".jpg", ".jpeg", ".png"]:
-        st.image(temp_path, caption="Uploaded Image", use_column_width=True)
-        results = model.predict(source=temp_path, save=False, conf=0.25)
-        for r in results:
-            result_img = r.plot()
-            st.image(result_img, caption="Prediction", use_column_width=True)
-
+        # Image detection
+        results = model.predict(source=file_path, save=False, conf=0.25)
+        result_img = results[0].plot()
+        return result_img
     elif suffix == ".mp4":
-        st.video(temp_path)
-        st.write("Running inference on video...")
-        save_dir = "output"
-        results = model.predict(source=temp_path, save=True, project=save_dir, name="streamlit", conf=0.25)
-        output_video_path = f"{save_dir}/streamlit/{Path(temp_path).name}"
-        st.success("Detection Complete!")
-        st.video(output_video_path)
+        # Video detection
+        save_dir = os.path.join(temp_dir, "output")
+        results = model.predict(source=file_path, save=True, project=save_dir, name="gradio", conf=0.25)
+        output_video_path = os.path.join(save_dir, "gradio", Path(file_path).name)
+        return output_video_path
+    else:
+        return None
+
+# Gradio interface
+demo = gr.Interface(
+    detect_elephant,
+    inputs=gr.File(label="Upload Image or Video"),
+    outputs=gr.outputs.Auto(gr.Image(label="Prediction"), gr.Video(label="Prediction")),
+    title="🐘 Elephant Detector using YOLOv8",
+    description="Upload an image or video to detect elephants using your trained model."
+)
+
+demo.launch()
